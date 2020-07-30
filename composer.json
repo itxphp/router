@@ -1,0 +1,25 @@
+{
+    "name": "itx/router",
+    "description": "Itx router",
+    "keywords": ["Router", "route"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ahmad Arafa",
+            "email": "hello@ahmadarafa.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.0.0" 
+    },
+    "autoload": {
+        "psr-4": {
+            "Itx\\Router\\": "src/" 
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "2.2-dev"
+        }
+    }
+}
