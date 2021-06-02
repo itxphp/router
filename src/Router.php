@@ -1,32 +1,38 @@
 <?php
-
 namespace Itx\Router;
 
 class Router
 {
 
+
     static $namedRoutes = [] ;
+    static $currentRoute = null ;
+
     protected $namespace = null;
     protected $action = null;
     protected $groupMiddleWares = null;
 
-    public function __construct(\Itx\Router\RouteBuilder $builder, \Psr\Http\Message\ServerRequestInterface $request)
+    public function __construct(\Itx\Router\RouteBuilder $builder, \Psr\Http\Message\ServerRequestInterface $request , array $config)
     {
 
+
+       
 
         //self::$routes = $routes ;
         $autoRoute = false;
         // find proper server ;
-        $key = "global";
+        $key = "parent";
 
 
         $validMethods = [strtolower($this->getCurrentMethod($request)), "any"];
-
+      
         $routes = $builder->getRoutes();
-        
-        self::$namedRoutes = $builder->getNamedRoutes();
 
-        foreach ($builder->getKeys() as $_key) {
+
+        self::$namedRoutes = $builder->getNamedRoutes() ;
+
+        
+        foreach ($builder->getHosts() as $_key) {
             if (preg_match("/^{$_key}$/",  $request->getServerParams()["SERVER_NAME"])) {
                 $key = $_key;
                 break;
@@ -36,20 +42,27 @@ class Router
 
         $currentUrl = $this->getCurrentUrl($request);
 
-        $validKeys = [$key, "global"];
+        $validKeys = [$key, "parent"];
+
+
+
+        $scheme = $request->getUri()->getScheme() ;
 
 
         foreach ($validKeys as $key) {
             foreach ($validMethods as $method) {
-                if (isset($routes[$key][$method])) {
-                    foreach ($routes[$key][$method]["route"] as $regex => $action) {
+                if (isset($routes[$scheme][$key][$method])) {
+                    foreach ($routes[$scheme][$key][$method]["route"] as $regex => $action) {
                         if (preg_match("#^" . $regex . "$#J", $currentUrl, $out)) {
                             unset($out[0]);
                             if (is_callable($action["action"])) {
                                 // just for example .. 
                                 exit($action["action"]($request));
-                            } else {
 
+                            } else if($action["action"] == '__Redirect') {
+                                header("location: {$action['headers']['location']}") ;
+                                exit();
+                            } else {
                                 $action_string     = explode("\\", $action["action"]);
                                 $controller = ucfirst(array_pop($action_string));
 
@@ -59,12 +72,18 @@ class Router
                                     $out["method"] ?? 'main'
                                 );
 
+                             
+                                
+
                                 if (count($action_string) > 0) {
                                     $action["dir"] = implode(DS, $action_string) . DS;
                                     $action["namespace"] = implode("\\", $action_string) . "\\";
                                 }
-                                $action["middlewares"] = $builder->getGroupMiddleware($action["group"]) + $action["middlewares"];
+                                $action["middlewares"] = $builder->getGroupMiddleware($action["scope"]) + $action["middlewares"];
+                                $action["headers"] = $builder->getGroupHeaders($action["scope"]) + $action["headers"];
+
                                 $action["params"] = $out;
+                                self::$currentRoute = $action["name"];
                                 $this->action = $action;
                             }
                         }
@@ -72,6 +91,14 @@ class Router
                 }
             }
         }
+    }
+    public static function getNamedRoute($name)
+    {
+        if(array_key_exists($name , self::$namedRoutes)) {
+
+        }
+
+        return null ;
     }
     public function getAction($what = null)
     {
@@ -92,6 +119,7 @@ class Router
 
     public function getMiddlewares()
     {
+
         return $this->action["middlewares"] ?? [];
     }
 
@@ -134,7 +162,6 @@ class Router
         $valid = [
             'PUT', 'POST', 'DELETE', 'PATCH'
         ];
-
 
         isset($request->getServerParams()['HTTP_X_HTTP_METHOD_OVERRIDE']) && ($method  = strtoupper($request->getServerParams()['HTTP_X_HTTP_METHOD_OVERRIDE']));
 
