@@ -5,7 +5,7 @@
  * @author     itx team
  * @copyright  2019-2020 itxTech
  * @license    https://opensource.org/licenses/MIT	MIT License
- * @link       https://itxTech.com
+ * @link      
  * @since      Version 4.0.0
  */
 
@@ -22,7 +22,6 @@ class RouteBuilder
     private $currentGroup = [
         "host" => "parent",
         "prefix" => "",
-        "postfix" => "",
         "scheme" => "https",
         "namespace" => "\\",
         "dir" => "//"
@@ -31,6 +30,7 @@ class RouteBuilder
     private $groupsMiddlewares = [];
     private $isRoute = false;
     private $hosts = [];
+    private $namedRoutes = [];
 
     /**
      *  Convert route variables into regex 
@@ -45,6 +45,8 @@ class RouteBuilder
         "@id"       => "(?<id>[0-9]{1,})",
         ">@string"  => ">[a-z0-9A-Z\-\_\.\%\p{L}]{1,}",
         "@string"   => "(?<string>[a-z0-9A-Z\-\_\.\%\p{L}]{1,})",
+        ">@integer" =>  ">[0-9]{1,}",
+        "@integer"  => "(?<integer>[0-9]{1,})",
         ">@slug"    =>  ">[a-zA-Z0-9\%\-\_\p{L}]{1,}",
         "@slug"     =>  "(?<slug>[a-zA-Z0-9\%\-\_\p{L}]{1,})",
         ">@any"     => "\?.*\/?",
@@ -83,9 +85,8 @@ class RouteBuilder
 
         $prefix = trim($this->currentGroup["prefix"], "/") . "/";
 
-        $postfix = $this->currentGroup["postfix"];
 
-        $index = trim($prefix . trim(strtr($path, $this->pregex), "/") . $postfix, "/");
+        $index = trim($prefix . trim(strtr($path, $this->pregex), "/"), "/");
 
         $index = $index ?? '/';
 
@@ -102,7 +103,7 @@ class RouteBuilder
             "dir"           => str_replace("\\", DS, $namespace),
             "headers"       => [],
             "middlewares"   => [],
-            "scope"         => $this->scope ,
+            "scope"         => $this->scope,
             "pregex"         => $path
         ];
 
@@ -144,9 +145,33 @@ class RouteBuilder
     }
     public function only(array $methods, $path, $action, $name = null)
     {
-        return $this->setRoute("any", $path, $action, $name);
-    }
+        foreach ($methods as $method) {
+            $this->setRoute($method, $path, $action, $name);
+        }
 
+        return $this;
+    }
+    // resful("customers" , "Customers::class") ;
+
+    public function restful($resource, $controller, $options = [])
+    {
+        return $this->group([], function ($route) use ($resource, $controller) {
+            $crud = [
+                "main" => "get",
+                "show"  => "get",
+                "store" => "post",
+                "update"   => "put",
+                "delete" => "delete"
+            ];
+            foreach ($crud as $path => $httpMethod) {
+                if ($path !== "main") {
+                   $route->{$httpMethod}(sprintf("%s/@id/", $resource), "{$controller}.$path", "{$resource}.{$path}");
+                } else {
+                    $route->{$httpMethod}( $resource, "{$controller}.$path", "{$resource}.{$path}");
+                }
+            }
+        });
+    }
 
     // public function crud($path, $action, $options = null)
     // {
@@ -185,6 +210,9 @@ class RouteBuilder
     {
         $history = $this->currentGroup;
         $scope = $this->scope;
+        if (isset($array["prefix"])) {
+            $array["prefix"] = $this->currentGroup["prefix"] . $array["prefix"];
+        }
         $this->currentGroup = array_merge($history, $array);
         $groupName = $array["name"] ?? (($array["prefix"] ?? "") . ($array["scheme"] ?? "") . ($array["host"] ?? "") . ($array["postfix"] ?? ""));
         if (isset($array["host"])) {
@@ -203,6 +231,7 @@ class RouteBuilder
         $this->isGroup = true;
         $this->isRoute = false;
         $this->scheme = $this->forceHttps ? "https" : "http";
+
         return $this;
     }
     public function withMiddlewares($list = [])
@@ -242,22 +271,23 @@ class RouteBuilder
 
     public function redirect($path, $url)
     {
-        $this->setRoute("get", $path, "__Redirect")->current["headers"]["location"] = $url;
+        $this->setRoute("get", $path, "__Redirect__")->current["headers"]["location"] = $url;
         return $this;
     }
 
 
     public function robots($action)
     {
-        $this->current["headers"]["x-robots-tag"] = $action;
-        return $this;
+        return $this->withHeaders([
+            "X-Robots-Tag" => $action
+        ]);
     }
 
     public function as($name)
     {
         $this->current["name"] = $name;
         $this->namedRoutes[$name] = $this->currentGroup;
-        $this->namedRoutes[$name]["pregex"] = $this->current["pregex"]; ;
+        $this->namedRoutes[$name]["pregex"] = $this->current["pregex"];;
         // = [
         //     "host" => $this->current["host"] ,
         //     "prefix" => $this->current["prefix"] ,
@@ -321,9 +351,9 @@ class RouteBuilder
     public function forceHttps(bool $force)
     {
         $this->forceHttps = $force;
-        $this->scheme = $force ? "https" : 'http' ;
+        $this->scheme = $force ? "https" : 'http';
         $force && $this->group(["scheme" => "http"], function ($route) {
-            $route->any("@any", "__Redirect")->withHeaders([
+            $route->any("@any", "__Redirect__")->withHeaders([
                 "location" => "https://" . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']
             ]);
         });
@@ -331,18 +361,13 @@ class RouteBuilder
 
     public function preFlight()
     {
-        $this->group([], function ($route) {
-            $route->options("@any" , function() {
+        $this->group(["name" => "preflight"], function ($route) {
+            $route->options("@any", function () {
                 header('Access-Control-Allow-Origin: http://localhost:3000');
                 header('Access-Control-Allow-Methods: POST, GET, DELETE, PUT, PATCH, OPTIONS');
                 header('Access-Control-Allow-Headers: Accept, X-Requested-With, X-HTTP-Method-Override, Content-Type, Authorization , Origin , Accept-Language');
                 header('Access-Control-Allow-Credentials: true');
-            }) ;
+            });
         });
-    }
-
-
-    public function __destruct()
-    {
     }
 }
